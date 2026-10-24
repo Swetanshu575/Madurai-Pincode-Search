@@ -1,5 +1,5 @@
 # Bharat Bazaar - Problem 1: The Madurai Pincode Search
-
+video link:- https://drive.google.com/drive/folders/1wzm3HvR7SARfJdmGwNDxliZW9lButbPy?usp=sharing
 ## What is the problem and how I approached it
 
 So basically the issue at Bharat Bazaar happened right before Diwali week. A user in Madurai searched for "cotton saree under 1500, delivery by Friday" and only got 2 results back, even tho the catalogue actually had hundreds of matching sarees for that pincode. 
