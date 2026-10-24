@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.npz
+catalogue_data.npz
+.env
+.venv/
+env/
+.idea/
+.vscode/
