@@ -1,19 +1,72 @@
 # Bharat Bazaar - Problem 1: The Madurai Pincode Search
 video link:- https://drive.google.com/drive/folders/1wzm3HvR7SARfJdmGwNDxliZW9lButbPy?usp=sharing
-## What is the problem and how I approached it
+# Project Overview
 
-So basically the issue at Bharat Bazaar happened right before Diwali week. A user in Madurai searched for "cotton saree under 1500, delivery by Friday" and only got 2 results back, even tho the catalogue actually had hundreds of matching sarees for that pincode. 
+Ye project Bharat Bazaar ke product search problem ka ek prototype hai. Iska goal hai ki user ke **vector similarity** aur **metadata filters** (jaise zone, category aur price) ko combine karke relevant products efficiently find kiye ja sakein.
 
-When I looked into what the search team was doing, they had two broken extremes:
-First they did **Pure Post-Filtering** where the vector search grabs the top 100 nearest items globally across the whole catalogue and then filters out whatever cant deliver to Madurai. Since metro hubs like Mumbai_Bhiwandi and Delhi_Gurugram has almost 68% of the inventory, those big zones hogged all top 100 slots in the saree vector cluster, leaving almost nothing for Madurai.
-Then they tried **Pure Pre-Filtering** where they filtered the whole metadata table first and ran exact brute force search on the remaining vectors. That fixed Madurai completely (100% recall), but when someone from Mumbai searched, almost the whole catalogue qualified and scanning 15,000+ vectors every query made latency jump 5x to 10x slower.
+Project mein 50,000 synthetic products aur 128-dimensional vectors generate kiye jaate hain. Data ko 256 clusters mein organize karne ke liye `MiniBatchKMeans` use hota hai, aur custom IVF-style search NumPy ke through implement ki gayi hai.
 
-My approach to solve both without breaking the other is a **Cost-Based Hybrid IVF Engine** built from scratch in numpy. Instead of using one fixed strategy, I built a custom Inverted File (IVF) index with 256 partitions (using sklearn MiniBatchKMeans only for initial centroids) and attached lightweight bitmask summaries to every partition. On top of that sits a zero-scan selectivity planner. Before touching any vectors, the planner estimates what fraction of the catalogue (`s_hat`) will survive the filter using in-memory hash counters and a 100-bin log price histogram. Based on that estimate, it dynamically routes the query to one of three execution paths:
-- If the filter is super selective (`s_hat <= 4.0%`, like Madurai), dont even bother with IVF overhead—just mask the global array and do an **Exact Pre-Filter Scan** on those few hundred vectors.
-- If the filter is medium (`4.0% < s_hat <= 30%`), use **Partition-Restricted IVF** which checks partition bitmasks first to skip empty clusters and applies the filter mask inline before scoring.
-- If the filter is broad (`s_hat > 30%`, like Mumbai or unfiltered), use **Adaptive Post-Filter IVF** which probes contiguous vector blocks using fast BLAS matrix-vector dot products and filters the candidates after.
+> Note: Ye demo synthetic data use karta hai. Is repository mein live pincode API ya real shopping catalogue connected nahi hai.
 
----
+## How It Works
+
+1. **Data Preparation** — products ke vectors, categories, delivery zones aur prices generate/load hote hain.
+2. **Index Building** — vectors ko 256 clusters mein group karke IVF partitions banaye jaate hain.
+3. **Selectivity Estimation** — planner estimate karta hai ki filters se kitne products match ho sakte hain.
+4. **Strategy Selection** — estimate ke basis par search ke teen tareeqon mein se ek choose hota hai:
+   - **Exact Pre-Filter Scan:** pehle filters apply hote hain, phir matching vectors ki exact similarity score hoti hai.
+   - **Partition-Restricted IVF:** irrelevant clusters ko summaries se skip karke selected clusters mein search hoti hai.
+   - **Adaptive Post-Filter IVF:** selected clusters ke vectors score hote hain, phir metadata filters apply hote hain.
+5. **Evaluation** — search results ko exact filtered search se compare karke Recall@10 aur latency measure ki jaati hai.
+
+## Main Files
+
+| File | Purpose |
+|---|---|
+| `main.py` | Benchmark aur mutation test run karta hai. |
+| `data_prep.py` | Synthetic catalogue create/load karta hai. |
+| `ivf_index.py` | `FilterSpec`, partitions, index aur three search methods implement karta hai. |
+| `planner.py` | Selectivity estimate karke search strategy choose karta hai. |
+| `baselines.py` | Pure pre-filter aur pure post-filter comparison methods. |
+| `benchmark.py` | Query workloads, Recall@10 aur latency evaluate karta hai. |
+| `mutation_test.py` | Deletes aur naye shifted-distribution items ke baad performance test karta hai. |
+| `requirements.txt` | Required Python packages. |
+
+## Setup and Run
+
+Python 3.11+ recommended hai.
+
+```bash
+pip install -r requirements.txt
+python main.py
+```
+
+Sirf benchmark run karne ke liye:
+
+```bash
+python benchmark.py
+```
+
+Sirf insert/delete mutation experiment run karne ke liye:
+
+```bash
+python mutation_test.py
+```
+
+Generated dataset `catalogue_data.npz` mein cache hota hai. Fresh dataset generate karna ho, toh is file ko delete karke program dobara run karein.
+
+## Metrics
+
+- **Recall@10:** exact filtered search ke top 10 results mein se kitne results search method ne find kiye.
+- **p50 latency:** median query time.
+- **p95 latency:** slower queries ki performance samajhne ke liye 95th-percentile time.
+
+## Important Notes
+
+- `planner.py` ka low threshold calibration ke baad approximately **1.2%–4%** ke beech set hota hai; high threshold **30%** hai.
+- Selectivity sketch maximum 500 active products sample karta hai. 50,000 items par ye approximately **1%** hai, 2% nahi.
+- Normal benchmark mein sketch-aware estimation default se enabled nahi hai; Part 6 mein ise separately test kiya gaya hai.
+- IVF-based strategies approximate hain, isliye woh har query par globally exact top-10 results guarantee nahi karti.
 
 ## Architecture Diagram and Walkthrough
 
