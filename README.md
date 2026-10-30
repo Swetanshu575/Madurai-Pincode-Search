@@ -35,6 +35,7 @@ Project mein 50,000 synthetic products aur 128-dimensional vectors generate kiye
 ## Setup and Run
 
 Python 3.11+ recommended hai.
+This will run the Whole Programm , The Strcuture of System desgin is defined here.
 
 ```bash
 pip install -r requirements.txt
